@@ -47,7 +47,8 @@
 #define STRINGIFY(x)                _STRINGIFY(x)
 #define MIN_CHUNK_SIZE              2
 #define MAX_CHUNK_SIZE              128
-#define MAX_HEX_VALUES              32
+//Increase pair to 32 (64/2)
+#define MAX_HEX_VALUES              64
 #define HEX_SPLIT                   64
 #ifndef IMAGE_FILE_MACHINE_RISCV64
 #define IMAGE_FILE_MACHINE_RISCV64  0x5064
