@@ -717,7 +717,7 @@ static int main_utf8(int argc, char** argv)
 		fclose(file);
 		return -1;
 	}
-
+	//Fix the bug
 	spout("Patching data...\n");
 	for (pos = 0; ; pos++) {
 		assert(val_size < max_chunk_size);
@@ -726,32 +726,54 @@ static int main_utf8(int argc, char** argv)
 			// it won't be applied because we break too soon. But we don't care about
 			// this in this patcher because the end should be the digital signature...
 			break;
+
 		for (i = 0; i < (int)chunk_list_size; i++) {
-			if ((chunk_list[i].size <= val_size) && (memcmp(chunk_list[i].org, val, chunk_list[i].size) == 0)) {
+
+			if ((chunk_list[i].size <= val_size) &&
+				(memcmp(chunk_list[i].org, val, chunk_list[i].size) == 0)) {
+
 				if ((chunk_list[i].patched++ == 1) && warn_on_multiple) {
-					perr("WARNING: More than one section with data %s is being patched!\n", hex_value[2 * i]);
+					perr("WARNING: More than one section with data %s is being patched!\n",
+						hex_value[2 * i]);
 				}
-				static_sprintf(format, "%08llX - %%s\n", pos - val_size + chunk_list[i].size);
+
+				/* 1) Compute the match start offset strictly from ftell */
+				long cur_read = ftell(file);                     /* Current absolute file position right after fread */
+				long match_start = (long)(cur_read - val_size);  /* File offset where the buffer head begins */
+
+				/* For logging output, keep the existing display format */
+				static_sprintf(format, "%08llX - %%s\n",
+					(unsigned long long)match_start);
 				SplitHexString(format, "         - %s\n", hex_value[2 * i]);
-				memcpy(val, chunk_list[i].new, chunk_list[i].size);
-				fseek(file, (long)(pos - val_size + chunk_list[i].size), SEEK_SET);
-				if (fwrite(&val, 1, chunk_list[i].size, file) != chunk_list[i].size) {
+
+				/* 2) Write the new byte sequence directly, not the transient buffer */
+				fseek(file, match_start, SEEK_SET);
+				if (fwrite(chunk_list[i].new, 1, chunk_list[i].size, file) != chunk_list[i].size) {
 					SplitHexString("         = %s [FAILED!]\n", "         = %s\n", hex_value[2 * i]);
-				} else {
+				}
+				else {
 					SplitHexString("         + %s\n", NULL, hex_value[2 * i + 1]);
 					patched++;
 				}
 				fflush(file);
-				// Now reposition ourselves to the next byte to read...
-				fseek(file, (long)(pos + val_size), SEEK_SET);
-				// ...and prevent patch overlap by removing our data
+
+				/* 3) Restore the next read position precisely.
+					   Safest is to return to the absolute position captured in cur_read.
+					   Then drop the matched bytes from the buffer and compact to prevent overlap. */
+				fseek(file, cur_read, SEEK_SET);
+
+				/* Remove the first chunk_size bytes that matched from the buffer */
 				val_size -= chunk_list[i].size;
 				memmove(val, &val[chunk_list[i].size], val_size);
+
+				/* Break here; further i is irrelevant. Proceed to the next input byte. */
 				break;
 			}
 		}
-		if (val_size == max_chunk_size)
+
+		if (val_size == max_chunk_size) {
 			memmove(val, &val[1], --val_size);
+		}
 	}
 
 	FreeChunkList(chunk_list, chunk_list_size);
